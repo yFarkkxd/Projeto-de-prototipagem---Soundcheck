@@ -1,8 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { X, Star } from 'lucide-react';
+import { X, Star, Info, ListMusic } from 'lucide-react';
 import { Album, Review, UserProfile } from '../types';
 import { cn } from '../lib/utils';
+import { getAlbumInfo } from '../services/gemini';
 
 interface ReviewFormProps {
   album: Album | null;
@@ -15,6 +16,20 @@ export function ReviewForm({ album, currentUser, onClose, onSubmit }: ReviewForm
   const [rating, setRating] = useState(0);
   const [hoveredRating, setHoveredRating] = useState(0);
   const [comment, setComment] = useState('');
+  const [extraInfo, setExtraInfo] = useState<any>(null);
+  const [loadingInfo, setLoadingInfo] = useState(false);
+
+  useEffect(() => {
+    if (album) {
+      setLoadingInfo(true);
+      getAlbumInfo(album.artist, album.title).then(info => {
+        setExtraInfo(info);
+        setLoadingInfo(false);
+      });
+    } else {
+      setExtraInfo(null);
+    }
+  }, [album]);
 
   if (!album) return null;
 
@@ -72,58 +87,85 @@ export function ReviewForm({ album, currentUser, onClose, onSubmit }: ReviewForm
             <div>
               <h2 className="font-serif text-2xl font-bold text-white">{album.title}</h2>
               <p className="text-white/60">{album.artist}</p>
+              
+              {extraInfo?.wiki?.summary && (
+                <div className="mt-2 max-h-24 overflow-y-auto pr-2 text-xs text-white/40">
+                  <div dangerouslySetInnerHTML={{ __html: extraInfo.wiki.summary }} />
+                </div>
+              )}
             </div>
           </div>
 
-          <form onSubmit={handleSubmit} className="mt-8 space-y-6">
-            <div>
-              <div className="flex items-center justify-between">
-                <label className="mb-2 block text-sm font-medium text-white/60">Sua Nota (0-5)</label>
-                <span className="text-xl font-bold text-purple-500">{rating}/5</span>
-              </div>
-              <div className="flex gap-3">
-                {[1, 2, 3, 4, 5].map((star) => (
-                  <button
-                    key={star}
-                    type="button"
-                    onMouseEnter={() => setHoveredRating(star)}
-                    onMouseLeave={() => setHoveredRating(0)}
-                    onClick={() => setRating(rating === star ? 0 : star)}
-                    className="transition-transform hover:scale-125"
-                  >
-                    <Star
-                      size={36}
-                      className={cn(
-                        "transition-colors",
-                        (hoveredRating || rating) >= star
-                          ? "fill-purple-500 text-purple-500"
-                          : "text-white/10"
-                      )}
-                    />
-                  </button>
-                ))}
-              </div>
-              <p className="mt-2 text-xs text-white/30">Clique na estrela selecionada para resetar para 0.</p>
+          <div className="mt-6 flex gap-4 overflow-hidden">
+            <div className="flex-1 space-y-6">
+              <form onSubmit={handleSubmit} className="space-y-6">
+                <div>
+                  <div className="flex items-center justify-between">
+                    <label className="mb-2 block text-sm font-medium text-white/60">Sua Nota (0-5)</label>
+                    <span className="text-xl font-bold text-purple-500">{rating}/5</span>
+                  </div>
+                  <div className="flex gap-3">
+                    {[1, 2, 3, 4, 5].map((star) => (
+                      <button
+                        key={star}
+                        type="button"
+                        onMouseEnter={() => setHoveredRating(star)}
+                        onMouseLeave={() => setHoveredRating(0)}
+                        onClick={() => setRating(rating === star ? 0 : star)}
+                        className="transition-transform hover:scale-125"
+                      >
+                        <Star
+                          size={32}
+                          className={cn(
+                            "transition-colors",
+                            (hoveredRating || rating) >= star
+                              ? "fill-purple-500 text-purple-500"
+                              : "text-white/10"
+                          )}
+                        />
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div>
+                  <label className="mb-2 block text-sm font-medium text-white/60">Sua Opinião</label>
+                  <textarea
+                    value={comment}
+                    onChange={(e) => setComment(e.target.value)}
+                    placeholder="O que achou deste álbum? (opcional)"
+                    rows={3}
+                    className="w-full rounded-xl bg-white/5 p-4 text-white outline-none ring-1 ring-white/10 transition-all focus:ring-purple-500/50"
+                  />
+                </div>
+
+                <button
+                  type="submit"
+                  className="w-full rounded-xl bg-purple-500 py-3 font-bold text-white shadow-lg shadow-purple-500/20 transition-all hover:bg-purple-600 active:scale-95"
+                >
+                  Publicar Review
+                </button>
+              </form>
             </div>
 
-            <div>
-              <label className="mb-2 block text-sm font-medium text-white/60">Sua Opinião</label>
-              <textarea
-                value={comment}
-                onChange={(e) => setComment(e.target.value)}
-                placeholder="O que achou deste álbum? (opcional)"
-                rows={4}
-                className="w-full rounded-xl bg-white/5 p-4 text-white outline-none ring-1 ring-white/10 transition-all focus:ring-purple-500/50"
-              />
-            </div>
-
-            <button
-              type="submit"
-              className="w-full rounded-xl bg-purple-500 py-4 font-bold text-white shadow-lg shadow-purple-500/20 transition-all hover:bg-purple-600 active:scale-95"
-            >
-              Publicar Review
-            </button>
-          </form>
+            {extraInfo?.tracks?.track && (
+              <div className="hidden w-48 flex-col gap-2 md:flex">
+                <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-white/30">
+                  <ListMusic size={14} />
+                  <span>Faixas</span>
+                </div>
+                <div className="max-h-64 overflow-y-auto pr-2">
+                  <ul className="space-y-1">
+                    {extraInfo.tracks.track.map((track: any, index: number) => (
+                      <li key={index} className="line-clamp-1 text-[10px] text-white/50">
+                        {index + 1}. {track.name}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
+            )}
+          </div>
         </motion.div>
       </div>
     </AnimatePresence>

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Music, TrendingUp, History, Star, Disc, User, Users, Settings, UserPlus, UserCheck, Check, X, Edit2, Search as SearchIcon } from 'lucide-react';
-import { Album, Review, UserProfile } from './types';
+import { Music, TrendingUp, History, Star, Disc, User, Users, Settings, UserPlus, UserCheck, Check, X, Edit2, Search as SearchIcon, MessageCircle, Send, Upload, Image as ImageIcon } from 'lucide-react';
+import { Album, Review, UserProfile, Chat, Message } from './types';
 import { AlbumCard } from './components/AlbumCard';
 import { ReviewForm } from './components/ReviewForm';
 import { ReviewList } from './components/ReviewList';
@@ -77,10 +77,23 @@ export default function App() {
   const [selectedAlbum, setSelectedAlbum] = useState<Album | null>(null);
   const [selectedUser, setSelectedUser] = useState<UserProfile | null>(null);
   const [userSearchResults, setUserSearchResults] = useState<UserProfile[]>([]);
-  const [activeTab, setActiveTab] = useState<'discover' | 'feed' | 'profile' | 'community'>(() => {
+  const [activeTab, setActiveTab] = useState<'discover' | 'feed' | 'profile' | 'community' | 'messages'>(() => {
     const saved = localStorage.getItem('soundcheck_active_tab');
     return (saved as any) || 'discover';
   });
+
+  const [chats, setChats] = useState<Chat[]>(() => {
+    const saved = localStorage.getItem('soundcheck_chats');
+    return saved ? JSON.parse(saved) : [];
+  });
+
+  const [messages, setMessages] = useState<Message[]>(() => {
+    const saved = localStorage.getItem('soundcheck_messages');
+    return saved ? JSON.parse(saved) : [];
+  });
+
+  const [activeChatId, setActiveChatId] = useState<string | null>(null);
+  const [newMessage, setNewMessage] = useState('');
   
   const [user, setUser] = useState<UserProfile>(() => {
     const saved = localStorage.getItem('soundcheck_user');
@@ -96,6 +109,7 @@ export default function App() {
   const [editName, setEditName] = useState(user.name);
   const [editHandle, setEditHandle] = useState(user.handle);
   const [editBio, setEditBio] = useState(user.bio);
+  const [editAvatar, setEditAvatar] = useState(user.avatar);
 
   // Sync edit states when user changes (e.g. after initial load)
   useEffect(() => {
@@ -125,6 +139,14 @@ export default function App() {
     localStorage.setItem('soundcheck_search_results', JSON.stringify(searchResults));
   }, [searchResults]);
 
+  useEffect(() => {
+    localStorage.setItem('soundcheck_chats', JSON.stringify(chats));
+  }, [chats]);
+
+  useEffect(() => {
+    localStorage.setItem('soundcheck_messages', JSON.stringify(messages));
+  }, [messages]);
+
   const handleAddReview = (reviewData: Omit<Review, 'id' | 'createdAt'>) => {
     const newReview: Review = {
       ...reviewData,
@@ -152,14 +174,15 @@ export default function App() {
       name: editName,
       handle: editHandle.startsWith('@') ? editHandle : `@${editHandle}`,
       bio: editBio,
+      avatar: editAvatar,
     };
     
     setUser(updatedUser);
     
-    // Update name and handle in existing reviews by this user
+    // Update name and avatar in existing reviews by this user
     setReviews(prev => prev.map(review => 
       review.userId === user.id 
-        ? { ...review, userName: editName } 
+        ? { ...review, userName: editName, userAvatar: editAvatar } 
         : review
     ));
     
@@ -170,7 +193,64 @@ export default function App() {
     setEditName(user.name);
     setEditHandle(user.handle);
     setEditBio(user.bio);
+    setEditAvatar(user.avatar);
     setIsEditingProfile(false);
+  };
+
+  const handleAvatarUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setEditAvatar(reader.result as string);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const PREDEFINED_AVATARS = ['Felix', 'Aneka', 'Milo', 'Luna', 'Oliver', 'Maya', 'Jack', 'Aria'];
+
+  const startChat = (otherUser: UserProfile) => {
+    let chat = chats.find(c => c.participants.includes(otherUser.id));
+    if (!chat) {
+      chat = {
+        id: `chat-${Date.now()}`,
+        participants: [user.id, otherUser.id],
+        updatedAt: Date.now(),
+      };
+      setChats([chat, ...chats]);
+    }
+    setActiveChatId(chat.id);
+    setActiveTab('messages');
+    setSelectedUser(null);
+  };
+
+  const handleSendMessage = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newMessage.trim() || !activeChatId) return;
+
+    const chat = chats.find(c => c.id === activeChatId);
+    if (!chat) return;
+
+    const otherUserId = chat.participants.find(p => p !== user.id);
+    if (!otherUserId) return;
+
+    const message: Message = {
+      id: `msg-${Date.now()}`,
+      senderId: user.id,
+      receiverId: otherUserId,
+      content: newMessage,
+      createdAt: Date.now(),
+      read: false,
+    };
+
+    setMessages([...messages, message]);
+    setNewMessage('');
+    
+    const updatedChats = chats.map(c => 
+      c.id === activeChatId ? { ...c, lastMessage: message, updatedAt: Date.now() } : c
+    );
+    setChats(updatedChats.sort((a, b) => b.updatedAt - a.updatedAt));
   };
 
   return (
@@ -201,6 +281,7 @@ export default function App() {
               { id: 'discover', icon: Music, label: 'Descobrir' },
               { id: 'feed', icon: History, label: 'Feed' },
               { id: 'community', icon: Users, label: 'Comunidade' },
+              { id: 'messages', icon: MessageCircle, label: 'Mensagens' },
               { id: 'profile', icon: User, label: 'Perfil' },
             ].map((tab) => (
               <button
@@ -390,6 +471,112 @@ export default function App() {
             </motion.div>
           )}
 
+          {activeTab === 'messages' && (
+            <motion.div
+              key="messages"
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="flex h-[calc(100vh-200px)] overflow-hidden rounded-3xl glass"
+            >
+              {/* Chat List */}
+              <div className="w-80 border-r border-white/5 bg-white/2">
+                <div className="border-b border-white/5 p-6">
+                  <h2 className="font-serif text-2xl font-bold text-white">Mensagens</h2>
+                </div>
+                <div className="overflow-y-auto">
+                  {chats.length === 0 ? (
+                    <div className="p-10 text-center text-sm text-white/20">
+                      Nenhuma conversa iniciada.
+                    </div>
+                  ) : (
+                    chats.map(chat => {
+                      const otherParticipant = reviews.find(r => chat.participants.includes(r.userId) && r.userId !== user.id);
+                      const name = otherParticipant?.userName || 'Usuário';
+                      const avatar = otherParticipant?.userAvatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${chat.id}`;
+                      
+                      return (
+                        <button
+                          key={chat.id}
+                          onClick={() => setActiveChatId(chat.id)}
+                          className={cn(
+                            "flex w-full items-center gap-4 border-b border-white/5 p-4 transition-colors hover:bg-white/5",
+                            activeChatId === chat.id && "bg-white/10"
+                          )}
+                        >
+                          <img src={avatar} alt={name} className="h-12 w-12 rounded-full border border-white/10 bg-white/10" />
+                          <div className="flex-1 overflow-hidden text-left">
+                            <h4 className="line-clamp-1 text-sm font-bold text-white">{name}</h4>
+                            <p className="line-clamp-1 text-xs text-white/40">
+                              {chat.lastMessage ? chat.lastMessage.content : 'Inicie uma conversa'}
+                            </p>
+                          </div>
+                        </button>
+                      );
+                    })
+                  )}
+                </div>
+              </div>
+
+              {/* Chat Window */}
+              <div className="flex flex-1 flex-col bg-white/1">
+                {activeChatId ? (
+                  <>
+                    <div className="flex-1 overflow-y-auto p-6 space-y-4">
+                      {messages
+                        .filter(m => 
+                          (m.senderId === user.id && m.receiverId === chats.find(c => c.id === activeChatId)?.participants.find(p => p !== user.id)) ||
+                          (m.receiverId === user.id && m.senderId === chats.find(c => c.id === activeChatId)?.participants.find(p => p !== user.id))
+                        )
+                        .map(msg => (
+                          <div
+                            key={msg.id}
+                            className={cn(
+                              "flex",
+                              msg.senderId === user.id ? "justify-end" : "justify-start"
+                            )}
+                          >
+                            <div
+                              className={cn(
+                                "max-w-[70%] rounded-2xl px-4 py-2 text-sm shadow-lg",
+                                msg.senderId === user.id 
+                                  ? "bg-purple-500 text-white" 
+                                  : "bg-white/10 text-white backdrop-blur-md"
+                              )}
+                            >
+                              {msg.content}
+                            </div>
+                          </div>
+                        ))}
+                    </div>
+                    <form onSubmit={handleSendMessage} className="border-t border-white/5 bg-black/40 p-4 backdrop-blur-md">
+                      <div className="flex gap-2">
+                        <input
+                          type="text"
+                          value={newMessage}
+                          onChange={(e) => setNewMessage(e.target.value)}
+                          placeholder="Escreva sua mensagem..."
+                          className="flex-1 rounded-xl bg-white/5 px-4 py-2 text-sm text-white outline-none ring-1 ring-white/10 focus:ring-purple-500/50"
+                        />
+                        <button
+                          type="submit"
+                          className="flex h-10 w-10 items-center justify-center rounded-xl bg-purple-500 text-white shadow-lg shadow-purple-500/20 transition-all hover:bg-purple-600"
+                        >
+                          <Send size={18} />
+                        </button>
+                      </div>
+                    </form>
+                  </>
+                ) : (
+                  <div className="flex flex-1 flex-col items-center justify-center text-center text-white/20">
+                    <MessageCircle size={64} className="mb-4 opacity-10" />
+                    <p>Selecione uma conversa para começar.</p>
+                  </div>
+                )}
+              </div>
+            </motion.div>
+          )}
+
           {activeTab === 'profile' && (
             <motion.div
               key="profile"
@@ -403,18 +590,47 @@ export default function App() {
                 <div className="flex flex-col items-center gap-8 md:flex-row md:items-start">
                   <div className="relative">
                     <img
-                      src={user.avatar}
+                      src={isEditingProfile ? editAvatar : user.avatar}
                       alt={user.name}
                       className="h-32 w-32 rounded-full border-4 border-white/10 bg-white/5 shadow-2xl md:h-40 md:w-40"
                     />
-                    <button className="absolute bottom-2 right-2 flex h-10 w-10 items-center justify-center rounded-full bg-white/10 text-white backdrop-blur-md transition-all hover:bg-white/20">
-                      <Settings size={20} />
-                    </button>
+                    {isEditingProfile ? (
+                      <label className="absolute bottom-2 right-2 flex h-10 w-10 cursor-pointer items-center justify-center rounded-full bg-purple-500 text-white shadow-lg transition-all hover:bg-purple-600">
+                        <Upload size={20} />
+                        <input type="file" accept="image/*" className="hidden" onChange={handleAvatarUpload} />
+                      </label>
+                    ) : (
+                      <button className="absolute bottom-2 right-2 flex h-10 w-10 items-center justify-center rounded-full bg-white/10 text-white backdrop-blur-md transition-all hover:bg-white/20">
+                        <Settings size={20} />
+                      </button>
+                    )}
                   </div>
 
                   <div className="flex-1 text-center md:text-left">
                     {isEditingProfile ? (
-                      <div className="space-y-4">
+                      <div className="space-y-6">
+                        <div className="space-y-2">
+                          <label className="text-xs font-bold uppercase tracking-widest text-white/30">Escolha um Avatar</label>
+                          <div className="flex flex-wrap gap-3">
+                            {PREDEFINED_AVATARS.map((seed) => {
+                              const url = `https://api.dicebear.com/7.x/avataaars/svg?seed=${seed}`;
+                              return (
+                                <button
+                                  key={seed}
+                                  onClick={() => setEditAvatar(url)}
+                                  className={cn(
+                                    "relative h-12 w-12 overflow-hidden rounded-full border-2 transition-all hover:scale-110",
+                                    editAvatar === url ? "border-purple-500 ring-2 ring-purple-500/20" : "border-transparent opacity-60 hover:opacity-100"
+                                  )}
+                                >
+                                  <img src={url} alt={seed} className="h-full w-full object-cover" />
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+
+                        <div className="space-y-4">
                         <div className="space-y-2">
                           <label className="text-xs font-bold uppercase tracking-widest text-white/30">Nome</label>
                           <input
@@ -457,7 +673,8 @@ export default function App() {
                           </button>
                         </div>
                       </div>
-                    ) : (
+                    </div>
+                  ) : (
                       <>
                         <div className="flex items-center justify-center gap-4 md:justify-start">
                           <h1 className="font-serif text-4xl font-bold text-white">{user.name}</h1>
@@ -574,21 +791,29 @@ export default function App() {
                       <h2 className="font-serif text-3xl font-bold text-white">{selectedUser.name}</h2>
                       <p className="text-white/40">{selectedUser.handle}</p>
                     </div>
-                    <button
-                      onClick={() => toggleFollow(selectedUser.id)}
-                      className={cn(
-                        "flex items-center gap-2 rounded-full px-6 py-2 font-bold transition-all",
-                        following.has(selectedUser.id) 
-                          ? "bg-white/10 text-purple-500" 
-                          : "bg-purple-500 text-white shadow-lg shadow-purple-500/20 hover:scale-105"
-                      )}
-                    >
-                      {following.has(selectedUser.id) ? (
-                        <><UserCheck size={18} /> Seguindo</>
-                      ) : (
-                        <><UserPlus size={18} /> Seguir</>
-                      )}
-                    </button>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => toggleFollow(selectedUser.id)}
+                        className={cn(
+                          "flex items-center gap-2 rounded-full px-6 py-2 font-bold transition-all",
+                          following.has(selectedUser.id) 
+                            ? "bg-white/10 text-purple-500" 
+                            : "bg-purple-500 text-white shadow-lg shadow-purple-500/20 hover:scale-105"
+                        )}
+                      >
+                        {following.has(selectedUser.id) ? (
+                          <><UserCheck size={18} /> Seguindo</>
+                        ) : (
+                          <><UserPlus size={18} /> Seguir</>
+                        )}
+                      </button>
+                      <button
+                        onClick={() => startChat(selectedUser as UserProfile)}
+                        className="flex h-10 w-10 items-center justify-center rounded-full bg-white/10 text-white backdrop-blur-md transition-all hover:bg-white/20"
+                      >
+                        <MessageCircle size={20} />
+                      </button>
+                    </div>
                   </div>
                   <p className="mt-4 text-white/60">{selectedUser.bio}</p>
                   

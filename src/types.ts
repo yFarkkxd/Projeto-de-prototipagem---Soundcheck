@@ -33,3 +33,19 @@ export interface UserProfile {
   followingCount: number;
   joinedAt: number;
 }
+
+export interface Message {
+  id: string;
+  senderId: string;
+  receiverId: string;
+  content: string;
+  createdAt: number;
+  read: boolean;
+}
+
+export interface Chat {
+  id: string;
+  participants: string[]; // [user1Id, user2Id]
+  lastMessage?: Message;
+  updatedAt: number;
+}

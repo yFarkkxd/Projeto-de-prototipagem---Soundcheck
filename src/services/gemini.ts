@@ -2,10 +2,33 @@ import { GoogleGenAI, Type } from "@google/genai";
 import { Album, UserProfile } from "../types";
 
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || "" });
+const LASTFM_API_KEY = (import.meta as any).env.VITE_LASTFM_API_KEY;
 
 export async function searchMusic(query: string): Promise<Album[]> {
   try {
-    // Use iTunes Search API for real data and artwork (no key required)
+    // 1. Try Last.fm if key is available
+    if (LASTFM_API_KEY) {
+      try {
+        const lastfmResponse = await fetch(`https://ws.audioscrobbler.com/2.0/?method=album.search&album=${encodeURIComponent(query)}&api_key=${LASTFM_API_KEY}&format=json&limit=8`);
+        const lastfmData = await lastfmResponse.json();
+        
+        if (lastfmData.results?.albummatches?.album?.length > 0) {
+          return lastfmData.results.albummatches.album.map((item: any) => ({
+            id: item.mbid || `${item.name}-${item.artist}`.replace(/\s+/g, '-').toLowerCase(),
+            title: item.name,
+            artist: item.artist,
+            year: "N/A", // Search doesn't return year
+            genre: "Various",
+            coverUrl: item.image?.find((img: any) => img.size === 'extralarge')?.['#text'] || `https://picsum.photos/seed/${encodeURIComponent(item.name)}/400/400`,
+            description: `Álbum de ${item.artist} encontrado via Last.fm.`,
+          }));
+        }
+      } catch (err) {
+        console.warn("Last.fm search failed, falling back to iTunes", err);
+      }
+    }
+
+    // 2. Use iTunes Search API as standard/fallback
     const itunesResponse = await fetch(`https://itunes.apple.com/search?term=${encodeURIComponent(query)}&entity=album&limit=8`);
     const itunesData = await itunesResponse.json();
     
@@ -91,5 +114,18 @@ export async function searchUsers(query: string): Promise<UserProfile[]> {
   } catch (e) {
     console.error("User search failed", e);
     return [];
+  }
+}
+
+export async function getAlbumInfo(artist: string, album: string): Promise<any> {
+  if (!LASTFM_API_KEY) return null;
+  
+  try {
+    const response = await fetch(`https://ws.audioscrobbler.com/2.0/?method=album.getInfo&api_key=${LASTFM_API_KEY}&artist=${encodeURIComponent(artist)}&album=${encodeURIComponent(album)}&format=json`);
+    const data = await response.json();
+    return data.album;
+  } catch (e) {
+    console.error("Failed to fetch album info from Last.fm", e);
+    return null;
   }
 }
