@@ -1,2 +1,0 @@
-- name: osv-scanner
-  uses: google/osv-scanner-action@v2.3.5
