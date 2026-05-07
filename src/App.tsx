@@ -9,14 +9,20 @@ import { SearchMusic } from './components/SearchMusic';
 import { SearchUsers } from './components/SearchUsers';
 import { cn } from './lib/utils';
 
+const MOCK_USERS = [
+  { id: 'u1', name: 'Ana Silva', handle: '@aninha_music', avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Ana', bio: 'Fã de Daft Punk e música eletrônica.', followersCount: 154, followingCount: 89 },
+  { id: 'u2', name: 'Pedro Rock', handle: '@pedrorock', avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Pedro', bio: 'Colecionador de vinis de rock clássico.', followersCount: 231, followingCount: 142 },
+  { id: 'u3', name: 'Clara Jazz', handle: '@clarajazz', avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Clara', bio: 'Amante de Jazz e Blues.', followersCount: 98, followingCount: 56 },
+];
+
 const INITIAL_USER: UserProfile = {
   id: 'current-user',
   name: 'Seu Nome',
   handle: '@voce',
   avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Felix',
   bio: 'Amante de música e colecionador de vinis.',
-  followersCount: 128,
-  followingCount: 256,
+  followersCount: 42,
+  followingCount: 0,
   joinedAt: Date.now(),
 };
 
@@ -77,9 +83,10 @@ export default function App() {
   const [selectedAlbum, setSelectedAlbum] = useState<Album | null>(null);
   const [selectedUser, setSelectedUser] = useState<UserProfile | null>(null);
   const [userSearchResults, setUserSearchResults] = useState<UserProfile[]>([]);
-  const [activeTab, setActiveTab] = useState<'discover' | 'feed' | 'profile' | 'community' | 'messages'>(() => {
+  const [hasSearchedUsers, setHasSearchedUsers] = useState(false);
+  const [activeTab, setActiveTab] = useState<'home' | 'feed' | 'profile' | 'community' | 'messages'>(() => {
     const saved = localStorage.getItem('soundcheck_active_tab');
-    return (saved as any) || 'discover';
+    return (saved as any) || 'home';
   });
 
   const [chats, setChats] = useState<Chat[]>(() => {
@@ -116,7 +123,16 @@ export default function App() {
     setEditName(user.name);
     setEditHandle(user.handle);
     setEditBio(user.bio);
-  }, [user]);
+  }, [user.name, user.handle, user.bio]);
+
+  // Memoized user counts and lists
+  const userReviews = React.useMemo(() => reviews.filter(r => r.userId === user.id), [reviews, user.id]);
+  
+  const followedUsers = React.useMemo(() => {
+    return Array.from(following).map((followedId) => {
+      return MOCK_USERS.find(u => u.id === followedId) || userSearchResults.find(u => u.id === followedId);
+    }).filter(Boolean) as UserProfile[];
+  }, [following, userSearchResults]);
 
   // Save data to localStorage whenever it changes
   useEffect(() => {
@@ -132,6 +148,9 @@ export default function App() {
   }, [user]);
 
   useEffect(() => {
+    if (activeTab !== 'home') {
+      setSearchResults([]);
+    }
     localStorage.setItem('soundcheck_active_tab', activeTab);
   }, [activeTab]);
 
@@ -157,16 +176,24 @@ export default function App() {
   };
 
   const toggleFollow = (userId: string) => {
-    const newFollowing = new Set(following);
-    if (newFollowing.has(userId)) {
-      newFollowing.delete(userId);
-      setUser(prev => ({ ...prev, followingCount: prev.followingCount - 1 }));
-    } else {
-      newFollowing.add(userId);
-      setUser(prev => ({ ...prev, followingCount: prev.followingCount + 1 }));
-    }
-    setFollowing(newFollowing);
+    setFollowing(prev => {
+      const next = new Set(prev);
+      if (next.has(userId)) {
+        next.delete(userId);
+      } else {
+        next.add(userId);
+      }
+      return next;
+    });
   };
+
+  // Sync followingCount with following set size
+  useEffect(() => {
+    setUser(prev => ({
+      ...prev,
+      followingCount: following.size
+    }));
+  }, [following.size]);
 
   const handleSaveProfile = () => {
     const updatedUser = {
@@ -253,6 +280,22 @@ export default function App() {
     setChats(updatedChats.sort((a, b) => b.updatedAt - a.updatedAt));
   };
 
+  // Animation Variants
+  const containerVariants = {
+    hidden: { opacity: 0 },
+    show: {
+      opacity: 1,
+      transition: {
+        staggerChildren: 0.1
+      }
+    }
+  };
+
+  const itemVariants = {
+    hidden: { opacity: 0, y: 20 },
+    show: { opacity: 1, y: 0, transition: { type: 'spring' as const, stiffness: 300, damping: 24 } }
+  };
+
   return (
     <div className="relative min-h-screen">
       <div className="atmosphere" />
@@ -262,30 +305,35 @@ export default function App() {
         <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
           <div className="flex items-center gap-8">
             <div className="flex items-center gap-2">
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-purple-500 text-white shadow-lg shadow-purple-500/20">
-                <Disc className="animate-spin-slow" size={24} />
-              </div>
+            <motion.div 
+               whileHover={{ scale: 1.1, rotate: 90 }}
+               className="flex h-10 w-10 items-center justify-center rounded-xl bg-purple-500 text-white shadow-lg shadow-purple-500/20"
+            >
+              <Disc className="animate-spin-slow" size={24} />
+            </motion.div>
               <span className="hidden font-serif text-2xl font-bold tracking-tight text-white md:block">SoundCheck</span>
             </div>
 
             <div className="hidden w-96 md:block">
               <SearchMusic onResults={(results) => {
                 setSearchResults(results);
-                setActiveTab('discover');
+                setActiveTab('home');
               }} />
             </div>
           </div>
 
           <div className="flex items-center gap-1 rounded-full bg-white/5 p-1">
             {[
-              { id: 'discover', icon: Music, label: 'Descobrir' },
+              { id: 'home', icon: Music, label: 'Início' },
               { id: 'feed', icon: History, label: 'Feed' },
               { id: 'community', icon: Users, label: 'Comunidade' },
               { id: 'messages', icon: MessageCircle, label: 'Mensagens' },
               { id: 'profile', icon: User, label: 'Perfil' },
             ].map((tab) => (
-              <button
+              <motion.button
                 key={tab.id}
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
                 onClick={() => setActiveTab(tab.id as any)}
                 className={cn(
                   "flex items-center gap-2 rounded-full px-4 py-2 text-sm font-medium transition-all md:px-6",
@@ -294,7 +342,7 @@ export default function App() {
               >
                 <tab.icon size={16} />
                 <span className="hidden md:inline">{tab.label}</span>
-              </button>
+              </motion.button>
             ))}
           </div>
         </div>
@@ -305,32 +353,86 @@ export default function App() {
         <div className="mb-8 md:hidden">
           <SearchMusic onResults={(results) => {
             setSearchResults(results);
-            setActiveTab('discover');
+            setActiveTab('home');
           }} />
         </div>
 
         <AnimatePresence mode="wait">
-          {activeTab === 'discover' && (
+          {activeTab === 'home' && (
             <motion.div
-              key="discover"
+              key="home"
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -20 }}
               className="space-y-12"
             >
               {searchResults.length === 0 ? (
-                <section className="flex flex-col items-center py-20 text-center">
-                  <motion.h1 
-                    initial={{ opacity: 0, scale: 0.9 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    className="max-w-3xl font-serif text-5xl font-bold leading-tight text-white md:text-7xl"
-                  >
-                    Sua música, sua <span className="text-purple-500">voz.</span>
-                  </motion.h1>
-                  <p className="mt-6 max-w-xl text-lg text-white/60">
-                    Descubra novos álbuns, compartilhe suas avaliações e conecte-se com outros amantes de música.
-                  </p>
-                </section>
+                <div className="space-y-20">
+                  {/* Enhanced Hero Section */}
+                  <section className="relative overflow-hidden rounded-[3rem] bg-gradient-to-br from-purple-900/20 via-black to-black p-8 md:p-20">
+                    <div className="absolute -left-20 -top-20 h-64 w-64 rounded-full bg-purple-600/10 blur-[120px]" />
+                    <div className="absolute -right-20 -bottom-20 h-64 w-64 rounded-full bg-blue-600/10 blur-[120px]" />
+                    
+                    <div className="relative z-10 flex flex-col items-center text-center">
+                      <motion.div
+                        initial={{ opacity: 0, y: 20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        className="mb-6 flex items-center gap-2 rounded-full border border-white/5 bg-white/5 px-4 py-1.5 text-xs font-bold uppercase tracking-widest text-purple-400"
+                      >
+                        <Star size={14} /> Nova Experiência Musical
+                      </motion.div>
+                      
+                      <motion.h1 
+                        initial={{ opacity: 0, y: 20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ delay: 0.1 }}
+                        className="max-w-4xl font-serif text-5xl font-bold leading-[1.1] text-white md:text-8xl"
+                      >
+                        Sua trilha sonora, <br />
+                        <span className="bg-gradient-to-r from-purple-400 to-purple-600 bg-clip-text text-transparent">sua verdade.</span>
+                      </motion.h1>
+                      
+                      <motion.p 
+                        initial={{ opacity: 0, y: 20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ delay: 0.2 }}
+                        className="mt-8 max-w-xl text-lg text-white/50"
+                      >
+                        O SoundCheck é onde a crítica musical encontra a paixão. Descubra álbuns, compartilhe notas e conecte-se com quem ouve o que você ama.
+                      </motion.p>
+                      
+                      <motion.div 
+                        initial={{ opacity: 0, y: 20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ delay: 0.3 }}
+                        className="mt-10 flex flex-wrap justify-center gap-4"
+                      >
+                        <motion.button 
+                          whileHover={{ scale: 1.05 }}
+                          whileTap={{ scale: 0.95 }}
+                          onClick={() => setActiveTab('community')}
+                          className="rounded-full bg-purple-500 px-8 py-4 font-bold text-white shadow-xl shadow-purple-500/20 transition-all hover:bg-purple-600"
+                        >
+                          Explorar Comunidade
+                        </motion.button>
+                        <motion.button 
+                          whileHover={{ scale: 1.05 }}
+                          whileTap={{ scale: 0.95 }}
+                          onClick={() => {
+                            const input = document.getElementById('search-music-input');
+                            if (input) {
+                              input.focus();
+                              input.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                            }
+                          }}
+                          className="rounded-full border border-white/10 bg-white/5 px-8 py-4 font-bold text-white backdrop-blur-md transition-all hover:bg-white/10"
+                        >
+                          Pesquisar Álbuns
+                        </motion.button>
+                      </motion.div>
+                    </div>
+                  </section>
+                </div>
               ) : (
                 <section className="space-y-6">
                   <div className="flex items-center gap-2 text-white/40">
@@ -377,97 +479,221 @@ export default function App() {
               exit={{ opacity: 0, y: -20 }}
               className="space-y-12"
             >
-              <section className="flex flex-col items-center py-10 text-center">
-                <h1 className="font-serif text-4xl font-bold text-white md:text-5xl">Encontre seus amigos</h1>
-                <p className="mt-4 max-w-xl text-white/60">
-                  Pesquise por outros amantes de música e veja o que eles andam ouvindo.
+              <section className="relative overflow-hidden rounded-3xl bg-purple-500/10 p-10 text-center">
+                <div className="atmosphere opacity-30" />
+                <h1 className="relative font-serif text-4xl font-bold text-white md:text-5xl">Conecte-se com a música</h1>
+                <p className="relative mt-4 mx-auto max-w-xl text-white/60">
+                  Descubra o que seus amigos estão ouvindo, siga novos críticos e construa sua rede musical.
                 </p>
-                <div className="mt-8 w-full max-w-xl">
-                  <SearchUsers onResults={setUserSearchResults} />
+                <div className="relative mt-10 flex justify-center">
+                  <SearchUsers onResults={(results) => {
+                    setUserSearchResults(results);
+                    setHasSearchedUsers(true);
+                  }} />
                 </div>
               </section>
 
-              {userSearchResults.length > 0 && (
+              {hasSearchedUsers && (
                 <section className="space-y-6">
-                  <div className="flex items-center gap-2 text-white/40">
-                    <SearchIcon size={20} />
-                    <h2 className="text-sm font-bold uppercase tracking-widest">Resultados da Busca</h2>
-                  </div>
-                  <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                    {userSearchResults.map((result) => (
-                      <div 
-                        key={result.id} 
-                        className="group flex cursor-pointer items-center justify-between rounded-2xl glass p-4 transition-all hover:bg-white/5"
-                        onClick={() => setSelectedUser(result)}
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2 text-white/40">
+                      <SearchIcon size={20} />
+                      <h2 className="text-sm font-bold uppercase tracking-widest">
+                        {userSearchResults.length > 0 ? 'Resultados da Busca' : 'Nenhum usuário encontrado'}
+                      </h2>
+                    </div>
+                    {userSearchResults.length > 0 && (
+                      <button 
+                        onClick={() => {
+                          setUserSearchResults([]);
+                          setHasSearchedUsers(false);
+                        }}
+                        className="text-xs font-bold text-purple-500 hover:underline"
                       >
-                        <div className="flex items-center gap-3">
-                          <img src={result.avatar} alt={result.name} className="h-12 w-12 rounded-full bg-white/5" />
-                          <div>
-                            <h4 className="text-sm font-bold text-white group-hover:text-purple-400">{result.name}</h4>
-                            <p className="text-xs text-white/40">{result.handle}</p>
-                          </div>
-                        </div>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            toggleFollow(result.id);
-                          }}
-                          className={cn(
-                            "flex h-10 w-10 items-center justify-center rounded-full transition-all",
-                            following.has(result.id) 
-                              ? "bg-white/10 text-purple-500" 
-                              : "bg-purple-500 text-white shadow-lg shadow-purple-500/20 hover:scale-105"
-                          )}
-                        >
-                          {following.has(result.id) ? <UserCheck size={20} /> : <UserPlus size={20} />}
-                        </button>
-                      </div>
-                    ))}
+                        Limpar busca
+                      </button>
+                    )}
                   </div>
+
+                  {userSearchResults.length > 0 ? (
+                    <motion.div 
+                      variants={containerVariants}
+                      initial="hidden"
+                      animate="show"
+                      className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3"
+                    >
+                      {userSearchResults.map((result) => (
+                        <motion.div 
+                          key={result.id} 
+                          variants={itemVariants}
+                          whileHover={{ y: -5, backgroundColor: 'rgba(255, 255, 255, 0.08)' }}
+                          className="group flex cursor-pointer items-center justify-between rounded-2xl glass p-5 transition-all"
+                          onClick={() => setSelectedUser(result)}
+                        >
+                          <div className="flex items-center gap-4">
+                            <div className="relative">
+                              <img src={result.avatar} alt={result.name} className="h-14 w-14 rounded-full border border-white/10 bg-white/5" />
+                              <div className="absolute -bottom-1 -right-1 h-4 w-4 rounded-full border-2 border-[#050505] bg-green-500" />
+                            </div>
+                            <div>
+                              <h4 className="text-sm font-bold text-white group-hover:text-purple-400">{result.name}</h4>
+                              <p className="text-xs text-white/40">{result.handle}</p>
+                            </div>
+                          </div>
+                          <motion.button
+                            whileHover={{ scale: 1.05 }}
+                            whileTap={{ scale: 0.95 }}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              toggleFollow(result.id);
+                            }}
+                            className={cn(
+                              "flex h-10 items-center justify-center gap-2 rounded-xl px-4 text-xs font-bold transition-all",
+                              following.has(result.id) 
+                                ? "bg-white/10 text-purple-500" 
+                                : "bg-purple-500 text-white shadow-lg shadow-purple-500/20 hover:scale-105"
+                            )}
+                          >
+                            {following.has(result.id) ? (
+                              <UserCheck size={16} />
+                            ) : (
+                              <><UserPlus size={16} /> Seguir</>
+                            )}
+                          </motion.button>
+                        </motion.div>
+                      ))}
+                    </motion.div>
+                  ) : (
+                    <div className="flex flex-col items-center justify-center py-12 text-center">
+                      <div className="mb-4 flex h-20 w-20 items-center justify-center rounded-full bg-white/5 text-white/20">
+                        <Users size={40} />
+                      </div>
+                      <h3 className="text-xl font-bold text-white">Usuário não encontrado</h3>
+                      <p className="mt-2 max-w-xs text-sm text-white/40">
+                        Não encontramos ninguém com esse nome ou handle. Tente pesquisar por termos diferentes.
+                      </p>
+                      <button 
+                        onClick={() => {
+                          setUserSearchResults([]);
+                          setHasSearchedUsers(false);
+                        }}
+                        className="mt-6 rounded-full border border-white/10 px-6 py-2 text-xs font-bold text-white transition-all hover:bg-white/5"
+                      >
+                        Voltar para sugestões
+                      </button>
+                    </div>
+                  )}
                 </section>
               )}
 
-              <div className="space-y-8">
-                <div className="flex items-center gap-2 text-white/40">
-                  <TrendingUp size={20} />
-                  <h2 className="text-sm font-bold uppercase tracking-widest">Sugestões para você</h2>
-                </div>
-                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                  {[
-                    { id: 'u1', name: 'Ana Silva', handle: '@aninha_music', avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Ana', bio: 'Fã de Daft Punk e música eletrônica.' },
-                    { id: 'u2', name: 'Pedro Rock', handle: '@pedrorock', avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Pedro', bio: 'Colecionador de vinis de rock clássico.' },
-                    { id: 'u3', name: 'Clara Jazz', handle: '@clarajazz', avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Clara', bio: 'Amante de Jazz e Blues.' },
-                  ].map((suggested) => (
-                    <div 
-                      key={suggested.id} 
-                      className="group flex cursor-pointer items-center justify-between rounded-2xl glass p-4 transition-all hover:bg-white/5"
-                      onClick={() => setSelectedUser(suggested as any)}
+              {!hasSearchedUsers && (
+                <div className="grid gap-12 lg:grid-cols-3">
+                  <div className="lg:col-span-2 space-y-8">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2 text-white/40">
+                        <TrendingUp size={20} className="text-purple-500" />
+                        <h2 className="text-sm font-bold uppercase tracking-widest">Membros em Destaque</h2>
+                      </div>
+                    </div>
+                    <motion.div 
+                      variants={containerVariants}
+                      initial="hidden"
+                      animate="show"
+                      className="grid gap-6 sm:grid-cols-2"
                     >
-                      <div className="flex items-center gap-3">
-                        <img src={suggested.avatar} alt={suggested.name} className="h-12 w-12 rounded-full bg-white/5" />
-                        <div>
-                          <h4 className="text-sm font-bold text-white group-hover:text-purple-400">{suggested.name}</h4>
-                          <p className="text-xs text-white/40">{suggested.handle}</p>
+                      {[
+                        { id: 'u1', name: 'Ana Silva', handle: '@aninha_music', avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Ana', bio: 'Fã de Daft Punk e música eletrônica.' },
+                        { id: 'u2', name: 'Pedro Rock', handle: '@pedrorock', avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Pedro', bio: 'Colecionador de vinis de rock clássico.' },
+                        { id: 'u3', name: 'Clara Jazz', handle: '@clarajazz', avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Clara', bio: 'Amante de Jazz e Blues.' },
+                      ].map((suggested) => (
+                        <motion.div 
+                          key={suggested.id} 
+                          variants={itemVariants}
+                          whileHover={{ y: -5, backgroundColor: 'rgba(255, 255, 255, 0.08)' }}
+                          className="group relative overflow-hidden rounded-3xl glass p-6 transition-all"
+                          onClick={() => setSelectedUser(suggested as any)}
+                        >
+                          <div className="flex flex-col items-center text-center">
+                            <div className="relative mb-4">
+                              <img src={suggested.avatar} alt={suggested.name} className="h-24 w-24 rounded-full border-2 border-white/10 bg-white/5 p-1 shadow-xl" />
+                              <div className="absolute bottom-1 right-1 h-5 w-5 rounded-full border-4 border-[#050505] bg-purple-500" />
+                            </div>
+                            <h4 className="font-serif text-xl font-bold text-white group-hover:text-purple-400">{suggested.name}</h4>
+                            <p className="text-sm text-white/40">{suggested.handle}</p>
+                            <p className="mt-3 line-clamp-2 text-xs text-white/60">{suggested.bio}</p>
+                            
+                            <div className="mt-6 flex w-full gap-2">
+                              <motion.button
+                                whileHover={{ scale: 1.02 }}
+                                whileTap={{ scale: 0.98 }}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  toggleFollow(suggested.id);
+                                }}
+                                className={cn(
+                                  "flex-1 items-center justify-center rounded-xl py-2.5 text-xs font-bold transition-all",
+                                  following.has(suggested.id) 
+                                    ? "bg-white/10 text-purple-500" 
+                                    : "bg-purple-500 text-white shadow-lg shadow-purple-500/20 hover:bg-purple-600"
+                                )}
+                              >
+                                {following.has(suggested.id) ? 'Seguindo' : 'Seguir'}
+                              </motion.button>
+                              <motion.button
+                                whileHover={{ scale: 1.05 }}
+                                whileTap={{ scale: 0.95 }}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  startChat(suggested as any);
+                                }}
+                                className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/5 text-white transition-all hover:bg-white/10"
+                              >
+                                <MessageCircle size={18} />
+                              </motion.button>
+                            </div>
+                          </div>
+                        </motion.div>
+                      ))}
+                    </motion.div>
+                  </div>
+
+                  <motion.div 
+                    variants={itemVariants}
+                    className="space-y-8"
+                  >
+                    <div className="flex items-center gap-2 text-white/40">
+                      <Music size={20} className="text-purple-500" />
+                      <h2 className="text-sm font-bold uppercase tracking-widest">Resumo da Comunidade</h2>
+                    </div>
+                    
+                    <div className="rounded-3xl glass p-6 space-y-6">
+                      <div className="flex items-center justify-between border-b border-white/5 pb-4">
+                        <span className="text-sm text-white/40">Total de Membros</span>
+                        <span className="font-bold text-white">4.2k</span>
+                      </div>
+                      <div className="flex items-center justify-between border-b border-white/5 pb-4">
+                        <span className="text-sm text-white/40">Reviews Hoje</span>
+                        <span className="font-bold text-white">128</span>
+                      </div>
+                      <div className="flex items-center justify-between border-b border-white/5 pb-4">
+                        <span className="text-sm text-white/40">Álbuns Populares</span>
+                        <span className="font-bold text-white">12</span>
+                      </div>
+                      
+                      <div className="pt-4">
+                        <h4 className="mb-4 text-xs font-bold uppercase tracking-widest text-white/30">Top Gêneros</h4>
+                        <div className="flex flex-wrap gap-2">
+                          {['Rock', 'Jazz', 'Electronic', 'Pop', 'Hip-Hop'].map(genre => (
+                            <span key={genre} className="rounded-full bg-white/5 px-3 py-1 text-[10px] text-white/40">
+                              {genre}
+                            </span>
+                          ))}
                         </div>
                       </div>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          toggleFollow(suggested.id);
-                        }}
-                        className={cn(
-                          "flex h-10 w-10 items-center justify-center rounded-full transition-all",
-                          following.has(suggested.id) 
-                            ? "bg-white/10 text-purple-500" 
-                            : "bg-purple-500 text-white shadow-lg shadow-purple-500/20 hover:scale-105"
-                        )}
-                      >
-                        {following.has(suggested.id) ? <UserCheck size={20} /> : <UserPlus size={20} />}
-                      </button>
                     </div>
-                  ))}
+                  </motion.div>
                 </div>
-              </div>
+              )}
             </motion.div>
           )}
 
@@ -695,12 +921,15 @@ export default function App() {
                         <span className="block text-2xl font-bold text-white">{user.followersCount}</span>
                         <span className="text-xs font-bold uppercase tracking-widest text-white/30">Seguidores</span>
                       </div>
-                      <div className="text-center md:text-left">
-                        <span className="block text-2xl font-bold text-white">{user.followingCount}</span>
+                      <button 
+                        onClick={() => setActiveTab('profile')} // Just refresh for now
+                        className="text-center transition-all hover:scale-105 md:text-left"
+                      >
+                        <span className="block text-2xl font-bold text-white">{following.size}</span>
                         <span className="text-xs font-bold uppercase tracking-widest text-white/30">Seguindo</span>
-                      </div>
+                      </button>
                       <div className="text-center md:text-left">
-                        <span className="block text-2xl font-bold text-white">{reviews.filter(r => r.userId === user.id).length}</span>
+                        <span className="block text-2xl font-bold text-white">{userReviews.length}</span>
                         <span className="text-xs font-bold uppercase tracking-widest text-white/30">Reviews</span>
                       </div>
                     </div>
@@ -711,8 +940,44 @@ export default function App() {
               {/* User's Reviews */}
               <div className="space-y-8">
                 <h2 className="font-serif text-3xl font-bold text-white">Suas Avaliações</h2>
-                <ReviewList reviews={reviews.filter(r => r.userId === user.id)} />
+                <ReviewList reviews={userReviews} />
               </div>
+
+              {/* User's Following */}
+              {following.size > 0 && (
+                <div className="space-y-8">
+                  <div className="flex items-center gap-2 text-white/40">
+                    <UserCheck size={20} />
+                    <h2 className="text-sm font-bold uppercase tracking-widest">Pessoas que você segue</h2>
+                  </div>
+                  <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                    {followedUsers.map((followedUser) => (
+                        <div 
+                          key={followedUser.id} 
+                          className="group flex cursor-pointer items-center justify-between rounded-2xl glass p-4 transition-all hover:bg-white/5"
+                          onClick={() => setSelectedUser(followedUser)}
+                        >
+                          <div className="flex items-center gap-3">
+                            <img src={followedUser.avatar} alt={followedUser.name} className="h-12 w-12 rounded-full bg-white/5" />
+                            <div>
+                              <h4 className="text-sm font-bold text-white group-hover:text-purple-400">{followedUser.name}</h4>
+                              <p className="text-xs text-white/40">{followedUser.handle}</p>
+                            </div>
+                          </div>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              toggleFollow(followedUser.id);
+                            }}
+                            className="bg-white/10 text-purple-500 flex h-10 w-10 items-center justify-center rounded-full transition-all"
+                          >
+                            <UserCheck size={20} />
+                          </button>
+                        </div>
+                      ))}
+                  </div>
+                </div>
+              )}
 
               {/* Suggestions to Follow */}
               <div className="space-y-8">
@@ -721,21 +986,24 @@ export default function App() {
                   <h2 className="text-sm font-bold uppercase tracking-widest">Sugestões para seguir</h2>
                 </div>
                 <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                  {[
-                    { id: 'u1', name: 'Ana Silva', handle: '@aninha_music', avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Ana' },
-                    { id: 'u2', name: 'Pedro Rock', handle: '@pedrorock', avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Pedro' },
-                    { id: 'u3', name: 'Clara Jazz', handle: '@clarajazz', avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Clara' },
-                  ].map((suggested) => (
-                    <div key={suggested.id} className="flex items-center justify-between rounded-2xl glass p-4">
+                  {MOCK_USERS.map((suggested) => (
+                    <div 
+                      key={suggested.id} 
+                      className="group flex cursor-pointer items-center justify-between rounded-2xl glass p-4 transition-all hover:bg-white/5"
+                      onClick={() => setSelectedUser(suggested as any)}
+                    >
                       <div className="flex items-center gap-3">
                         <img src={suggested.avatar} alt={suggested.name} className="h-12 w-12 rounded-full bg-white/5" />
                         <div>
-                          <h4 className="text-sm font-bold text-white">{suggested.name}</h4>
+                          <h4 className="text-sm font-bold text-white group-hover:text-purple-400">{suggested.name}</h4>
                           <p className="text-xs text-white/40">{suggested.handle}</p>
                         </div>
                       </div>
                       <button
-                        onClick={() => toggleFollow(suggested.id)}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          toggleFollow(suggested.id);
+                        }}
                         className={cn(
                           "flex h-10 w-10 items-center justify-center rounded-full transition-all",
                           following.has(suggested.id) 
@@ -754,10 +1022,6 @@ export default function App() {
         </AnimatePresence>
       </main>
 
-      {/* Footer */}
-      <footer className="mt-20 border-t border-white/5 py-12 text-center text-white/20">
-        <p className="text-sm">© 2026 SoundCheck. Powered by Gemini AI.</p>
-      </footer>
 
       {/* User Profile Modal */}
       <AnimatePresence>
@@ -819,7 +1083,9 @@ export default function App() {
                   
                   <div className="mt-6 flex justify-center gap-8 md:justify-start">
                     <div className="text-center md:text-left">
-                      <span className="block text-xl font-bold text-white">{selectedUser.followersCount}</span>
+                      <span className="block text-xl font-bold text-white">
+                        {selectedUser.followersCount + (following.has(selectedUser.id) ? 1 : 0)}
+                      </span>
                       <span className="text-[10px] font-bold uppercase tracking-widest text-white/30">Seguidores</span>
                     </div>
                     <div className="text-center md:text-left">

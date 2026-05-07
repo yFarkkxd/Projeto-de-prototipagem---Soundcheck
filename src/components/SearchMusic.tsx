@@ -86,6 +86,7 @@ export function SearchMusic({ onResults }: SearchMusicProps) {
             )}
           </div>
           <input
+            id="search-music-input"
             type="text"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
